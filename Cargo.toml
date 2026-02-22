@@ -26,7 +26,7 @@ members = [
     "crates/primitives/",
     "crates/script-sequence/",
     "crates/test-utils/",
-    "crates/cli-markdown/",
+    "crates/cli-markdown/", "crates/cast_lib",
 ]
 resolver = "2"
 
@@ -70,10 +70,10 @@ all = "warn"
 # Speed up compilation time for dev builds by reducing emitted debug info.
 # NOTE: Debuggers may provide less useful information with this setting.
 # Uncomment this section if you're using a debugger.
-[profile.dev]
+##[profile.dev]
 # https://davidlattimore.github.io/posts/2024/02/04/speeding-up-the-rust-edit-build-run-cycle.html
-debug = "line-tables-only"
-split-debuginfo = "unpacked"
+#debug = "line-tables-only"
+#split-debuginfo = "unpacked"
 
 [profile.release]
 opt-level = 3
@@ -81,6 +81,13 @@ lto = "thin"
 debug = "none"
 strip = "debuginfo"
 panic = "abort"
+codegen-units = 16
+
+[profile.dev]
+opt-level = "z"
+lto = "thin"
+debug = "none"
+strip = "debuginfo"
 codegen-units = 16
 
 # Use the `--profile profiling` flag to show symbols in release mode.
