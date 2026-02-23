@@ -14,7 +14,8 @@ repository.workspace = true
 workspace = true
 
 [lib]
-name = "src/lib.rs"
+name = "cast_lib"
+path = "src/lib.rs"
 
 [dependencies]
 # lib

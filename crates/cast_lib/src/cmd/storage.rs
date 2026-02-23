@@ -33,12 +33,31 @@ use foundry_config::{
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+use std::sync::LazyLock;
+use std::sync::RwLock;
+use std::{str::FromStr, sync::Arc};
+use tempfile::TempDir; //parkit lot?
 
 /// The minimum Solc version for outputting storage layouts.
 ///
 /// <https://github.com/ethereum/solidity/blob/develop/Changelog.md#065-2020-04-06>
 const MIN_SOLC: Version = Version::new(0, 6, 5);
+
+pub enum TempDirOption {
+    Some(TempDir),
+    None,
+}
+impl TempDirOption {
+    fn new() -> Self {
+        let create: std::result::Result<TempDir, std::io::Error> = TempDir::new();
+        if create.is_err() {
+            return Self::None;
+        }
+        Self::Some(create.unwrap())
+    }
+}
+static TEMP_DIR: LazyLock<Arc<RwLock<TempDirOption>>> =
+    LazyLock::new(|| Arc::new(RwLock::new(TempDirOption::new())));
 
 /// CLI arguments for `cast storage`.
 #[derive(Clone, Debug, Parser)]
@@ -156,29 +175,37 @@ impl StorageArgs {
         }
 
         // Create or reuse a persistent cache for Etherscan sources; fall back to a temp dir
-        let mut temp_dir = None;
-        let root_path = if let Some(cache_root) =
-            foundry_config::Config::foundry_etherscan_chain_cache_dir(chain)
-        {
-            let sources_root = cache_root.join("sources");
-            let contract_root = sources_root.join(format!("{address}"));
-            if let Err(err) = std::fs::create_dir_all(&contract_root) {
-                sh_warn!("Could not create etherscan cache dir, falling back to temp: {err}")?;
+        let tmp_dir: Arc<RwLock<TempDirOption>> = TEMP_DIR.clone();
+        let guard: std::result::Result<
+            std::sync::RwLockWriteGuard<'_, TempDirOption>,
+            std::sync::PoisonError<std::sync::RwLockWriteGuard<'_, TempDirOption>>,
+        > = tmp_dir.write();
+        if guard.is_ok() {
+            let mut unwrap_guard: std::sync::RwLockWriteGuard<'_, TempDirOption> = guard.unwrap();
+            let root_path = if let Some(cache_root) =
+                foundry_config::Config::foundry_etherscan_chain_cache_dir(chain)
+            {
+                let sources_root = cache_root.join("sources");
+                let contract_root = sources_root.join(format!("{address}"));
+                if let Err(err) = std::fs::create_dir_all(&contract_root) {
+                    sh_warn!("Could not create etherscan cache dir, falling back to temp: {err}")?;
+                    let tmp = tempfile::tempdir()?;
+                    let path = tmp.path().to_path_buf();
+                    *unwrap_guard = TempDirOption::Some(tmp);
+                    path
+                } else {
+                    contract_root
+                }
+            } else {
                 let tmp = tempfile::tempdir()?;
                 let path = tmp.path().to_path_buf();
-                temp_dir = Some(tmp);
+                *unwrap_guard = TempDirOption::Some(tmp);
                 path
-            } else {
-                contract_root
-            }
-        } else {
-            let tmp = tempfile::tempdir()?;
-            let path = tmp.path().to_path_buf();
-            temp_dir = Some(tmp);
-            path
-        };
+            };
+        
         let mut project = etherscan_project(metadata, &root_path)?;
         add_storage_layout_output(&mut project);
+        }
 
         // Decide on compiler to use (user override -> metadata -> autodetect)
         let meta_version = metadata.compiler_version()?;
@@ -228,7 +255,6 @@ impl StorageArgs {
             artifact
         };
 
-        drop(temp_dir);
         fetch_and_print_storage(provider, address, block, artifact).await
     }
 }

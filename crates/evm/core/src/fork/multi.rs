@@ -279,8 +279,7 @@ impl<N: Network> MultiForkHandler<N> {
     fn find_in_progress_task(&mut self, id: &ForkId) -> Option<&mut Vec<CreateSender<N>>> {
         for task in &mut self.pending_tasks {
             let ForkTask::Create(_, in_progress, _, additional) = task;
-            if in_progress == id
-            {
+            if in_progress == id {
                 return Some(additional);
             }
         }
